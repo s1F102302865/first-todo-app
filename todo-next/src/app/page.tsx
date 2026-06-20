@@ -1,27 +1,40 @@
 "use client";
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react' // 👈 サーバーからデータを自動で取るために useEffect を追加！
 
 interface Todo {
-  id: string;
+  id: number;          // 👈 SQLiteの自動連番(AUTOINCREMENT)に合わせて number に変更
   title: string;
-  isCompleted: boolean;
+  is_completed: number; // 👈 SQLiteの 0か1 の仕様に合わせて変更
+  created_at?: string;  // 👈 SQLiteが刻んでくれる作成日時を追加
 }
 
 export default function App() {
 
-  // 三つのデータを初回で保存し、それを二回目以降を保存し続け提供してくれる
-  const [todos, setTodos] = useState<Todo[]>([
-    { id: '1', title: 'Reactの環境構築をする', isCompleted: true },
-    { id: '2', title: 'モダンなフロントエンド画面を完成させる', isCompleted: true },
-    { id: '3', title: 'HonoでバックエンドAPIを作る（来週）', isCompleted: false },
-  ]);
+  // 💡 データベースから本物のデータを詰めるため、最初は空っぽの配列（ [] ）からスタートします！
+  const [todos, setTodos] = useState<Todo[]>([]);
 
   // 初期値は空です
   // 入力欄で文字が入力される度に、newTodoTitleの中身が更新されていく
   const [newTodoTitle, setNewTodoTitle] = useState('');
 
-  const handleAddTodo = (e: React.FormEvent) => {
+  // 📥 【新しく追加】データベース（サーバー）から最新のタスク一覧を引っ張ってくる関数
+  const fetchTodos = async () => {
+    try {
+      const res = await fetch('/api/todos'); // 👈 手ぶらでトラック（GET）を走らせる
+      const data = await res.json();
+      setTodos(data); // お弁当箱（State）を最新のデータに更新！
+    } catch (error) {
+      console.error('データの取得に失敗しました:', error);
+    }
+  };
+
+  // 🏃‍♂️ 【新しく追加】画面がパッと開いた瞬間に、自動で上の fetchTodos を実行するトリガー
+  useEffect(() => {
+    fetchTodos();
+  }, []);
+
+  const handleAddTodo = async (e: React.FormEvent) => { // 👈 非同期通信(fetch)を使うので async を追加
     // ブラウザリロード阻止
     e.preventDefault();
 
@@ -36,32 +49,38 @@ export default function App() {
     // }
     if (!newTodoTitle.trim()) return;
 
-    const newTodo: Todo = {
-      // 謎の英数字のIDを自動で生成
-      id: crypto.randomUUID(),
-      // 入力された値が渡される...todos, newTodo]); // 👈 点々3つで今までのタスクをぶちまけ、新しいカードを合体さ
-      title: newTodoTitle,
-      // 初期設定は未完了
-      isCompleted: false,
-    };
+    try {
+      // 🚀 ここで本物のサーバー（route.ts）のPOSTメソッドに向けてデータを渡す！
+      const res = await fetch('/api/todos', {
+        method: 'POST', // 👈 これが「荷物を送信（保存）する」というサイン！
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTodoTitle }), // 👈 これが「荷物の中身（データ）」！
+      });
 
-    // Stateの更新
-    // 点々3つで今までのタスクをぶちまけ、新しいカードを合体させて、Reactのメインお弁当箱を新しくする
-    setTodos([...todos, newTodo]);
+      if (res.ok) {
+        // 次の入力のために、input用のメモ帳だけ空っぽ（''）にお掃除！
+        setNewTodoTitle('');
 
-    // 次の入力のために、input用のメモ帳だけ空っぽ（''）にお掃除！
-    setNewTodoTitle('');
+        // 💡 サーバー側への保存が成功した瞬間に、自動でもう一度一覧を取得して画面を書き換える！
+        fetchTodos();
+      }
+    } catch (error) {
+      console.error('データの保存に失敗しました:', error);
+    }
   };
 
-  const handleToggleTodo = (id: string) => {
+  const handleToggleTodo = (id: number) => { // 👈 idをnumberに変更
+    // 💡 今後のステップでここも生SQL（PUT/PATCH等）でデータベースを書き換えるように進化させます！
+    // 現状は見た目のトグルが動くように、一時的にそのまま残しています
     setTodos(
       todos.map((todo) =>
-        todo.id === id ? { ...todo, isCompleted: !todo.isCompleted } : todo
+        todo.id === id ? { ...todo, is_completed: todo.is_completed === 1 ? 0 : 1 } : todo
       )
     );
   };
 
-  const handleDeleteTodo = (id: string) => {
+  const handleDeleteTodo = (id: number) => { // 👈 idをnumberに変更
+    // 💡 今後のステップでここも生SQL（DELETE）でデータベースから消去するように進化させます！
     setTodos(todos.filter((todo) => todo.id !== id));
   };
 
@@ -105,20 +124,24 @@ export default function App() {
               >
                 <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => handleToggleTodo(todo.id)}>
                   <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                    todo.isCompleted 
+                    todo.is_completed === 1 // 👈 完了条件を boolean から 1 に変更
                       ? 'bg-cyan-600 border-cyan-600 text-white' 
                       : 'border-slate-600'
                   }`}>
-                    {todo.isCompleted && (
+                    {todo.is_completed === 1 && ( // 👈 完了条件を 1 に変更
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-3 h-3">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                       </svg>
                     )}
                   </div>
                   <span className={`text-sm transition-all ${
-                    todo.isCompleted ? 'line-through text-slate-500' : 'text-slate-200'
+                    todo.is_completed === 1 ? 'line-through text-slate-500' : 'text-slate-200' // 👈 完了条件を 1 に変更
                   }`}>
                     {todo.title}
+                    {/* 👇 SQLiteが自動生成した日時を、タスクの横にひっそり表示するおまけ機能！ */}
+                    {todo.created_at && (
+                      <span className="text-[10px] text-slate-500 block">⏱ {todo.created_at}</span>
+                    )}
                   </span>
                 </div>
 
