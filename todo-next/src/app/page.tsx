@@ -69,19 +69,51 @@ export default function App() {
     }
   };
 
-  const handleToggleTodo = (id: number) => { // 👈 idをnumberに変更
-    // 💡 今後のステップでここも生SQL（PUT/PATCH等）でデータベースを書き換えるように進化させます！
-    // 現状は見た目のトグルが動くように、一時的にそのまま残しています
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? { ...todo, is_completed: todo.is_completed === 1 ? 0 : 1 } : todo
-      )
-    );
-  };
+  const handleToggleTodo = async (id: number) => { // 👈 idをnumberに変更
+    // 今クリックされたタスクを配列内から探し出す
+    const currentTodo = todos.find((todo) => todo.id === id);
+    if (!currentTodo) return;
 
-  const handleDeleteTodo = (id: number) => { // 👈 idをnumberに変更
-    // 💡 今後のステップでここも生SQL（DELETE）でデータベースから消去するように進化させます！
-    setTodos(todos.filter((todo) => todo.id !== id));
+    try {
+      // 1. バックエンドのPATCH APIに向けて、現在の「is_completed」の値を荷物（JSON）として送る
+      const response = await fetch(`/api/todos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_completed: currentTodo.is_completed }),
+      });
+
+      if (!response.ok) {
+        throw new Error('状態の更新に失敗しました');
+      }
+
+      // 2. 💡【超重要】DBの更新が成功したら、最新のデータを再取得して画面を自動更新！
+      await fetchTodos();
+
+    } catch (error) {
+      console.error('更新エラー:', error);
+      alert('更新に失敗しました');
+    }
+  };
+  // 🎯 【修正版】タスクを削除する本命の関数（APIと連動）
+  const handleDeleteTodo = async (id: number) => {
+    try {
+      // 1. バックエンドのAPIに削除リクエストを送信
+      const response = await fetch(`/api/todos/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('削除に失敗しました');
+      }
+
+      // 2. 💡【超重要】削除が成功したら、最新のデータを再取得して画面を自動更新！
+      await fetchTodos(); 
+    
+      alert('削除しました！'); // 動作確認用の仮アラート
+    } catch (error) {
+      console.error(error);
+      alert('エラーが発生しました');
+    }
   };
 
   return (
