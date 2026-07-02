@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  # 1. 起動するサービス（コンテナ）の名前を「web」と定義
+  web:
+    # 2. 「カレントディレクトリ（.）にあるDockerfileを使ってビルドしてね」という指示
+    build: .
+    
+    # 3. 作成されるコンテナに名前をつける（VS Codeのクジラ画面にこの名前が出ます）
+    container_name: todo-next-container
+    
+    # 4. ポートの接続設定（Windowsの3000番と、コンテナの中の3000番を繋ぐ）
+    ports:
+      - "3000:3000"
+      
+    # 5. 【超重要】Windows側でのコード変更を、リアルタイムにコンテナ内に同期させる設定（ボリューム）
+    volumes:
+      - .:/app
+      - /app/node_modules
+      
+    # 6. 開発モードなので、環境変数に「開発環境だよ」と教えてあげる
+    environment:
+      - NODE_ENV=development
