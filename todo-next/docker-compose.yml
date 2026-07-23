@@ -17,6 +17,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+      - /app/.next
       
     # 6. 開発モードなので、環境変数に「開発環境だよ」と教えてあげる
     environment:

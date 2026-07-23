@@ -1,19 +1,18 @@
 import { NextResponse } from 'next/server';
-import { openDB, initDB } from '@/lib/db'; // 先ほど作ったファイルをインポート
+import { getDB, initDB, saveDB } from '@/lib/db';
 
-// GETリクエスト（データ取得）の処理
 export async function GET() {
   try {
-    // 1. データベースの初期化（テーブルがなければ作成）
     await initDB();
+    const db = await getDB();
 
-    // 2. データベースを開く
-    const db = await openDB();
+    const stmt = db.prepare('SELECT * FROM todos ORDER BY created_at DESC;');
+    const todos = [];
+    while (stmt.step()) {
+      todos.push(stmt.getAsObject());
+    }
+    stmt.free();
 
-    // 3. 生のSQLでデータを全件取得（作成日時の新しい順）
-    const todos = await db.all('SELECT * FROM todos ORDER BY created_at DESC;');
-
-    // 4. 取得したデータをフロントエンドにJSON形式で返す
     return NextResponse.json(todos);
   } catch (error) {
     console.error('Database error:', error);
@@ -25,13 +24,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  let db;
   try {
-    // 1. フロント（またはテストツール）から送られてきたJSONデータを解析
     const body = await request.json();
     const { title } = body;
 
-    // バリデーション（タイトルが空ならエラーにするハサミの役割）
     if (!title || !title.trim()) {
       return NextResponse.json(
         { error: 'タイトルは必須項目です。' },
@@ -39,33 +35,24 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. データベースを開く
-    db = await openDB();
+    const db = await getDB();
 
-    // 3. 【生のSQL】INSERT INTO を使ってデータを保存！
-    // 💡 安全対策（SQLインジェクション対策）のため、値は「?」にして第二引数で渡すのが鉄則です
-    const result = await db.run(
-      'INSERT INTO todos (title) VALUES (?);',
-      title.trim()
-    );
+    db.run('INSERT INTO todos (title) VALUES (?);', [title.trim()]);
+    saveDB();
 
-    // 4. 今入れたデータのIDを使って、保存されたデータを取得する
-    const newTodo = await db.get('SELECT * FROM todos WHERE id = ?;', result.lastID);
+    const stmt = db.prepare('SELECT * FROM todos ORDER BY id DESC LIMIT 1;');
+    let newTodo = null;
+    if (stmt.step()) {
+      newTodo = stmt.getAsObject();
+    }
+    stmt.free();
 
-    // 5. 新しく作ったToDoをフロントに返す（ステータス201: Created）
     return NextResponse.json(newTodo, { status: 201 });
-
   } catch (error) {
     console.error('Database error:', error);
     return NextResponse.json(
       { error: 'データベースへの保存に失敗しました。' },
       { status: 500 }
     );
-  } finally {
-    // 💡 用事が済んだら必ず閉じる（これでロックを防ぐ！）
-    if (db) {
-      await db.close();
-      console.log('POST処理完了：データベースの接続を閉じました。');
-    }
   }
 }
