@@ -69,31 +69,35 @@ export default function App() {
     }
   };
 
-  const handleToggleTodo = async (id: number) => { // 👈 idをnumberに変更
-    // 今クリックされたタスクを配列内から探し出す
-    const currentTodo = todos.find((todo) => todo.id === id);
-    if (!currentTodo) return;
+  const handleToggleTodo = async (id: number) => {
+  // 今クリックされたタスクを配列内から探し出す
+  const currentTodo = todos.find((todo) => todo.id === id);
+  if (!currentTodo) return;
 
-    try {
-      // 1. バックエンドのPATCH APIに向けて、現在の「is_completed」の値を荷物（JSON）として送る
-      const response = await fetch(`/api/todos/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_completed: currentTodo.is_completed }),
-      });
+  // 1なら0、0なら1に反転させた状態を作る
+  const nextStatus = currentTodo.is_completed === 1 ? 0 : 1;
 
-      if (!response.ok) {
-        throw new Error('状態の更新に失敗しました');
-      }
+  try {
+    // バックエンドのPATCH APIに向けて、新しい状態（nextStatus）を送信する
+    const response = await fetch(`/api/todos/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_completed: nextStatus }), // 👈 ここを nextStatus に修正！
+    });
 
-      // 2. 💡【超重要】DBの更新が成功したら、最新のデータを再取得して画面を自動更新！
-      await fetchTodos();
-
-    } catch (error) {
-      console.error('更新エラー:', error);
-      alert('更新に失敗しました');
+    if (!response.ok) {
+      throw new Error('状態の更新に失敗しました');
     }
-  };
+
+    // DBの更新が成功したら最新データを再取得して画面を更新
+    await fetchTodos();
+
+  } catch (error) {
+    console.error('更新エラー:', error);
+    alert('更新に失敗しました');
+  }
+};
+
   // 🎯 【修正版】タスクを削除する本命の関数（APIと連動）
   const handleDeleteTodo = async (id: number) => {
     try {
