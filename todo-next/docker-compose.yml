@@ -1,24 +1,35 @@
 version: '3.8'
 
 services:
-  # 1. 起動するサービス（コンテナ）の名前を「web」と定義
+  # 1. Webアプリコンテナ（Next.js）
   web:
-    # 2. 「カレントディレクトリ（.）にあるDockerfileを使ってビルドしてね」という指示
     build: .
-    
-    # 3. 作成されるコンテナに名前をつける（VS Codeのクジラ画面にこの名前が出ます）
     container_name: todo-next-container
-    
-    # 4. ポートの接続設定（Windowsの3000番と、コンテナの中の3000番を繋ぐ）
     ports:
       - "3000:3000"
-      
-    # 5. 【超重要】Windows側でのコード変更を、リアルタイムにコンテナ内に同期させる設定（ボリューム）
     volumes:
       - .:/app
       - /app/node_modules
       - /app/.next
-      
-    # 6. 開発モードなので、環境変数に「開発環境だよ」と教えてあげる
     environment:
       - NODE_ENV=development
+      # 💡【超重要】Docker内のLocalStackコンテナへ向ける設定！
+      - AWS_REGION=ap-northeast-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - NEXT_PUBLIC_S3_BUCKET_NAME=my-local-bucket
+    # 💡 localstackコンテナが立ち上がってからwebを起動する
+    depends_on:
+      - localstack
+
+  # 2. LocalStackコンテナ（S3モック環境）
+  localstack:
+    container_name: localstack_main
+    image: localstack/localstack:3.4
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      - SERVICES=s3
+      - DEFAULT_REGION=ap-northeast-1
+      - AWS_DEFAULT_REGION=ap-northeast-1
