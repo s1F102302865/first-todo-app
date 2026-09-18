@@ -1,67 +1,93 @@
 "use client";
 
-import { useState, useEffect } from 'react' // 👈 サーバーからデータを自動で取るために useEffect を追加！
+import { useState, useEffect } from 'react';
 
 interface Todo {
-  id: number;          // 👈 SQLiteの自動連番(AUTOINCREMENT)に合わせて number に変更
+  id: number;
   title: string;
-  is_completed: number; // 👈 SQLiteの 0か1 の仕様に合わせて変更
-  created_at?: string;  // 👈 SQLiteが刻んでくれる作成日時を追加
+  is_completed: number;
+  created_at?: string;
+  image_url?: string; // 👈 将来的にDBと連携する際にも使える画像URLフィールド
 }
 
 export default function App() {
-
-  // 💡 データベースから本物のデータを詰めるため、最初は空っぽの配列（ [] ）からスタートします！
   const [todos, setTodos] = useState<Todo[]>([]);
-
-  // 初期値は空です
-  // 入力欄で文字が入力される度に、newTodoTitleの中身が更新されていく
   const [newTodoTitle, setNewTodoTitle] = useState('');
 
-  // 📥 【新しく追加】データベース（サーバー）から最新のタスク一覧を引っ張ってくる関数
+  // 📸 【新しく追加】画像アップロード用のState
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+
+  // 📥 データベースから最新タスクを取得
   const fetchTodos = async () => {
     try {
-      const res = await fetch('/api/todos'); // 👈 手ぶらでトラック（GET）を走らせる
+      const res = await fetch('/api/todos');
       const data = await res.json();
-      setTodos(data); // お弁当箱（State）を最新のデータに更新！
+      setTodos(data);
     } catch (error) {
       console.error('データの取得に失敗しました:', error);
     }
   };
 
-  // 🏃‍♂️ 【新しく追加】画面がパッと開いた瞬間に、自動で上の fetchTodos を実行するトリガー
   useEffect(() => {
     fetchTodos();
   }, []);
 
-  const handleAddTodo = async (e: React.FormEvent) => { // 👈 非同期通信(fetch)を使うので async を追加
-    // ブラウザリロード阻止
+  // 📸 【新しく追加】LocalStack (S3) へ画像をアップロードする処理
+  const handleImageUpload = async (file: File) => {
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (res.ok && data.url) {
+        setUploadedImageUrl(data.url); // S3から返ってきたURLを保持！
+      } else {
+        alert('画像のアップロードに失敗しました');
+      }
+    } catch (error) {
+      console.error('画像送信エラー:', error);
+      alert('画像送信中にエラーが発生しました');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // ファイルが選択された瞬間に発火するハンドラー
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      handleImageUpload(file); // 選択と同時に自動アップロード！
+    }
+  };
+
+  // 🚀 タスク追加処理
+  const handleAddTodo = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // ''のとき、false扱いになる
-    // ↓
-    // ! false = Trueになる
-    // ↓
-    // 条件が成立し、return文が実行される
-
-    //   if (newTodoTitle.trim() === '') {
-    //   return; 
-    // }
     if (!newTodoTitle.trim()) return;
 
     try {
-      // 🚀 ここで本物のサーバー（route.ts）のPOSTメソッドに向けてデータを渡す！
       const res = await fetch('/api/todos', {
-        method: 'POST', // 👈 これが「荷物を送信（保存）する」というサイン！
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: newTodoTitle }), // 👈 これが「荷物の中身（データ）」！
+        body: JSON.stringify({
+          title: newTodoTitle,
+          image_url: uploadedImageUrl, // 📸 S3の画像URLも一緒に送信（DB未対応でもOK）
+        }),
       });
 
       if (res.ok) {
-        // 次の入力のために、input用のメモ帳だけ空っぽ（''）にお掃除！
         setNewTodoTitle('');
-
-        // 💡 サーバー側への保存が成功した瞬間に、自動でもう一度一覧を取得して画面を書き換える！
+        setSelectedFile(null);
+        setUploadedImageUrl(null); // 画像入力もお掃除！
         fetchTodos();
       }
     } catch (error) {
@@ -69,51 +95,37 @@ export default function App() {
     }
   };
 
+  // 🔄 タスク完了状態の切り替え
   const handleToggleTodo = async (id: number) => {
-  // 今クリックされたタスクを配列内から探し出す
-  const currentTodo = todos.find((todo) => todo.id === id);
-  if (!currentTodo) return;
+    const currentTodo = todos.find((todo) => todo.id === id);
+    if (!currentTodo) return;
 
-  // 1なら0、0なら1に反転させた状態を作る
-  const nextStatus = currentTodo.is_completed === 1 ? 0 : 1;
+    const nextStatus = currentTodo.is_completed === 1 ? 0 : 1;
 
-  try {
-    // バックエンドのPATCH APIに向けて、新しい状態（nextStatus）を送信する
-    const response = await fetch(`/api/todos/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_completed: nextStatus }), // 👈 ここを nextStatus に修正！
-    });
+    try {
+      const response = await fetch(`/api/todos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_completed: nextStatus }),
+      });
 
-    if (!response.ok) {
-      throw new Error('状態の更新に失敗しました');
+      if (!response.ok) throw new Error('状態の更新に失敗しました');
+      await fetchTodos();
+    } catch (error) {
+      console.error('更新エラー:', error);
+      alert('更新に失敗しました');
     }
+  };
 
-    // DBの更新が成功したら最新データを再取得して画面を更新
-    await fetchTodos();
-
-  } catch (error) {
-    console.error('更新エラー:', error);
-    alert('更新に失敗しました');
-  }
-};
-
-  // 🎯 【修正版】タスクを削除する本命の関数（APIと連動）
+  // 🗑️ タスク削除処理
   const handleDeleteTodo = async (id: number) => {
     try {
-      // 1. バックエンドのAPIに削除リクエストを送信
       const response = await fetch(`/api/todos/${id}`, {
         method: 'DELETE',
       });
 
-      if (!response.ok) {
-        throw new Error('削除に失敗しました');
-      }
-
-      // 2. 💡【超重要】削除が成功したら、最新のデータを再取得して画面を自動更新！
-      await fetchTodos(); 
-    
-      alert('削除しました！'); // 動作確認用の仮アラート
+      if (!response.ok) throw new Error('削除に失敗しました');
+      await fetchTodos();
     } catch (error) {
       console.error(error);
       alert('エラーが発生しました');
@@ -128,27 +140,59 @@ export default function App() {
           <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent py-1">
             らんちゃんの Todo アプリ
           </h1>
-          <p className="text-xs text-slate-400 mt-1">SQL版ロードマップ - 第1サイクル</p>
+          <p className="text-xs text-slate-400 mt-1">SQL × LocalStack(S3) フルスタック構成</p>
         </div>
 
-        {/* ボタンが押されると、onSubmitがトリガーとなり、handleAddTodo関数が呼ばれる */}
-        <form onSubmit={handleAddTodo} className="flex gap-2">
-          {/* /* ReactのnewTodoTitleへデータを渡しているバトン➀ */}
-          <input
-            type="text"
-            placeholder="新しいタスクを入力してね"
-            value={newTodoTitle}
-            onChange={(e) => setNewTodoTitle(e.target.value)}
-            className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
-          />
-          <button
-            type="submit"
-            className="bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors"
-          >
-            追加
-          </button>
+        {/* 📝 タスク入力 ＆ 画像添付フォーム */}
+        <form onSubmit={handleAddTodo} className="space-y-3">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="新しいタスクを入力してね"
+              value={newTodoTitle}
+              onChange={(e) => setNewTodoTitle(e.target.value)}
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition-colors"
+            />
+            
+            {/* 📸 画像選択ボタン */}
+            <label className="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-2 rounded-xl cursor-pointer flex items-center justify-center transition-colors">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="hidden"
+                disabled={uploading}
+              />
+              📷
+            </label>
+
+            <button
+              type="submit"
+              disabled={uploading}
+              className="bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
+            >
+              追加
+            </button>
+          </div>
+
+          {/* ⏳ アップロード中ステータス */}
+          {uploading && (
+            <p className="text-xs text-yellow-400 animate-pulse">⚡ LocalStack S3へ画像をアップロード中...</p>
+          )}
+
+          {/* 🖼️ アップロード成功時のプレビュー表示 */}
+          {uploadedImageUrl && (
+            <div className="p-2 bg-slate-800/80 border border-slate-700 rounded-xl flex items-center gap-3">
+              <img src={uploadedImageUrl} alt="Preview" className="w-12 h-12 object-cover rounded-lg" />
+              <div className="flex-1 overflow-hidden">
+                <p className="text-xs text-green-400 font-medium">S3へ保存完了！</p>
+                <p className="text-[10px] text-slate-400 truncate">{uploadedImageUrl}</p>
+              </div>
+            </div>
+          )}
         </form>
 
+        {/* 📋 タスク一覧表示 */}
         <div className="space-y-2">
           {todos.length === 0 ? (
             <p className="text-center text-sm text-slate-500 py-4">タスクはありません</p>
@@ -160,25 +204,33 @@ export default function App() {
               >
                 <div className="flex items-center gap-3 flex-1 cursor-pointer" onClick={() => handleToggleTodo(todo.id)}>
                   <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors ${
-                    todo.is_completed === 1 // 👈 完了条件を boolean から 1 に変更
+                    todo.is_completed === 1
                       ? 'bg-cyan-600 border-cyan-600 text-white' 
                       : 'border-slate-600'
                   }`}>
-                    {todo.is_completed === 1 && ( // 👈 完了条件を 1 に変更
+                    {todo.is_completed === 1 && (
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor" className="w-3 h-3">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                       </svg>
                     )}
                   </div>
-                  <span className={`text-sm transition-all ${
-                    todo.is_completed === 1 ? 'line-through text-slate-500' : 'text-slate-200' // 👈 完了条件を 1 に変更
-                  }`}>
-                    {todo.title}
-                    {/* 👇 SQLiteが自動生成した日時を、タスクの横にひっそり表示するおまけ機能！ */}
+
+                  <div className="flex flex-col">
+                    <span className={`text-sm transition-all ${
+                      todo.is_completed === 1 ? 'line-through text-slate-500' : 'text-slate-200'
+                    }`}>
+                      {todo.title}
+                    </span>
+                    
                     {todo.created_at && (
-                      <span className="text-[10px] text-slate-500 block">⏱ {todo.created_at}</span>
+                      <span className="text-[10px] text-slate-500">⏱ {todo.created_at}</span>
                     )}
-                  </span>
+
+                    {/* 📸 DB連携後にS3の画像を表示するスペース */}
+                    {todo.image_url && (
+                      <img src={todo.image_url} alt="Todo Image" className="w-20 h-20 object-cover rounded-lg mt-2 border border-slate-700" />
+                    )}
+                  </div>
                 </div>
 
                 <button
