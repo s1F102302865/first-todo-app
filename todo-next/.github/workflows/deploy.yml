@@ -3,6 +3,7 @@ name: CI/CD Deploy to EC2
 on:
   push:
     branches: [ main ] # mainブランチへPRマージ/pushされた時に自動起動
+  workflow_dispatch: # 手動実行用トリガーを追加
 
 jobs:
   deploy:
