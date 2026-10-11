@@ -1,0 +1,27 @@
+name: CI/CD Deploy to EC2
+
+on:
+  push:
+    branches: [ main ] # mainブランチへPRマージ/pushされた時に自動起動
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. リポジトリのコードを取得
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. SSH接続してEC2上でGit pull & Docker再起動を実行
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/simple-todo-app
+            git pull origin main
+            docker compose down
+            docker compose up -d --build
